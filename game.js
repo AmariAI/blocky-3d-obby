@@ -110,8 +110,13 @@ function renderShop() {
 function setShop(open) {
   shopOpen = open;
   shopPanel.hidden = !open;
-  if (open) { renderShop(); $('#close-shop').focus(); }
-  else { $('#shop-button').focus(); }
+  if (open) {
+    Object.keys(keys).forEach((code) => { keys[code] = false; });
+    renderShop();
+    $('#close-shop').focus();
+  } else {
+    $('#shop-button').focus();
+  }
 }
 $('#shop-button').addEventListener('click', () => setShop(true));
 $('#close-shop').addEventListener('click', () => setShop(false));
@@ -122,9 +127,34 @@ window.addEventListener('keydown', (event) => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
 });
 window.addEventListener('keyup', (event) => { keys[event.code] = false; });
+window.addEventListener('blur', () => { Object.keys(keys).forEach((code) => { keys[code] = false; }); });
+
+// Mobile buttons use pointer events so multiple directions and jump can be held together.
+for (const button of document.querySelectorAll('#touch-controls [data-code]')) {
+  const code = button.dataset.code;
+  const release = () => {
+    keys[code] = false;
+    button.classList.remove('pressed');
+    if (button.hasPointerCapture?.(button._pointerId)) button.releasePointerCapture(button._pointerId);
+  };
+  button.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    if (shopOpen || finished) return;
+    button._pointerId = event.pointerId;
+    button.setPointerCapture(event.pointerId);
+    keys[code] = true;
+    button.classList.add('pressed');
+  });
+  button.addEventListener('pointerup', release);
+  button.addEventListener('pointercancel', release);
+  button.addEventListener('lostpointercapture', () => {
+    keys[code] = false;
+    button.classList.remove('pressed');
+  });
+  button.addEventListener('contextmenu', (event) => event.preventDefault());
+}
 
 // Color, width, and hazards ramp up as the course advances through four stages.
-const stageNames = ['Easy', 'Medium', 'Hard', 'Expert'];
 const stageColors = [0x61d98b, 0x53c9d2, 0xffbf55, 0xf27691];
 const platforms = [];
 const addPlatform = (x, z, w, d, top, stage, checkpoint = false) => {
@@ -146,7 +176,6 @@ route.forEach(([x, z, w, d, top, stage], index) => addPlatform(x, z, w, d, top, 
 const endPlatform = { x: 0, z: 139, w: 12, d: 12, top: 2, stage: 3 };
 addPlatform(endPlatform.x, endPlatform.z, endPlatform.w, endPlatform.d, endPlatform.top, 3, true);
 
-// Simple scenery under/around the course.
 const island = new THREE.Mesh(new THREE.BoxGeometry(170, 1, 170), new THREE.MeshStandardMaterial({ color: 0x52667a, roughness: 1 }));
 island.position.set(0, -14, 68);
 scene.add(island);
@@ -158,7 +187,6 @@ for (let i = 0; i < 16; i++) {
   scene.add(cloud);
 }
 
-// Hazards sit on selected platforms; the final stages have more of them.
 const hazards = [];
 const hazardSpecs = [
   [1, 0, 0, 1.6], [3, -1.6, 0, 1.5], [5, 0, 0, 1.5], [6, 1.7, 0, 1.5],
@@ -174,7 +202,6 @@ for (const [platformIndex, offsetX, offsetZ, size] of hazardSpecs) {
   hazards.push({ mesh, x: mesh.position.x, z: mesh.position.z, radius: size * 0.72 });
 }
 
-// Coins are placed along the route, with extra coins after checkpoints.
 const coins = [];
 const coinGeometry = new THREE.TorusGeometry(0.38, 0.12, 8, 18);
 const coinMaterial = new THREE.MeshStandardMaterial({ color: 0xffd34e, emissive: 0x9a5d00, emissiveIntensity: 0.55, metalness: 0.3, roughness: 0.35 });
@@ -197,8 +224,7 @@ goalRing.position.set(0, endPlatform.top + 1.5, endPlatform.z);
 scene.add(goalRing);
 
 const player = new THREE.Group();
-const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xffb833, roughness: 0.7 });
-const torso = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.05, 0.55), bodyMaterial);
+const torso = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.05, 0.55), new THREE.MeshStandardMaterial({ color: 0xffb833, roughness: 0.7 }));
 torso.position.y = 1.25;
 torso.castShadow = true;
 player.add(torso);
@@ -224,7 +250,6 @@ aura.visible = false;
 player.add(aura);
 const trailParticles = [];
 const particleGeometry = new THREE.BoxGeometry(0.22, 0.22, 0.22);
-const trailColors = [0x67c7ff, 0xc49aff, 0xff78cb];
 function updateEffects() {
   const ownedAuras = upgrades.filter((item) => item.kind === 'Aura' && save.owned.includes(item.id));
   const ownedTrails = upgrades.filter((item) => item.kind === 'Trail' && save.owned.includes(item.id));
@@ -323,7 +348,7 @@ function animate() {
       moving = true;
       legs.forEach((leg, index) => { leg.rotation.x = Math.sin(elapsed * 12 + index * Math.PI) * 0.45; });
     } else legs.forEach((leg) => { leg.rotation.x *= 0.8; });
-    const jumpDown = Boolean(keys.Space || keys.ArrowUp && keys.ShiftLeft);
+    const jumpDown = Boolean(keys.Space);
     if (jumpDown && !jumpWasDown && onGround) {
       velocityY = 8.5 + stats().jump;
       onGround = false;
@@ -350,6 +375,7 @@ function animate() {
     collectCoins();
     if (player.position.distanceTo(goal.position) < 2.2) {
       finished = true;
+      Object.keys(keys).forEach((code) => { keys[code] = false; });
       finishMessage.hidden = false;
       stageLabel.textContent = 'Complete · Champion!';
       showToast('Obby complete!');

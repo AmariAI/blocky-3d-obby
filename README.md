@@ -14,9 +14,9 @@ Open <http://localhost:8000> in your browser. You can also publish the repositor
 
 ## Controls
 
-- **WASD** or **arrow keys** — move
-- **Space** — jump
-- **Shop** — open the upgrade panel; press Escape or × to close
+- **Desktop:** WASD or arrow keys to move; Space to jump
+- **Mobile/tablet:** use the on-screen direction pad to move and the Jump button to hop; hold multiple controls together to move and jump
+- **Shop:** open the upgrade panel; press Escape or × to close
 - Collect coins along the route, and use checkpoints to save your place
 
 ## Upgrades and difficulty
@@ -27,6 +27,6 @@ Coin balance and purchased upgrades are saved in the current browser using local
 
 ## Project files
 
-- `index.html` — game HUD, shop panel, and win screen
+- `index.html` — game HUD, shop panel, touch controls, and win screen
 - `style.css` — responsive interface styles
 - `game.js` — Three.js scene, course, controls, coins, shop, and upgrades

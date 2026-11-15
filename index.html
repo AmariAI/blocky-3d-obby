@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#101a32" />
     <title>Blocky Obby</title>
     <link rel="stylesheet" href="./style.css" />
@@ -33,6 +33,16 @@
       <div id="shop-items" class="shop-items"></div>
       <p class="shop-footnote">Bonuses are capped: up to +18% speed and +12% jump height.</p>
     </section>
+
+    <nav id="touch-controls" aria-label="Touch movement controls">
+      <div class="dpad" aria-label="Move">
+        <button class="touch-button up" type="button" data-code="KeyW" aria-label="Move forward">▲</button>
+        <button class="touch-button left" type="button" data-code="KeyA" aria-label="Move left">◀</button>
+        <button class="touch-button down" type="button" data-code="KeyS" aria-label="Move backward">▼</button>
+        <button class="touch-button right" type="button" data-code="KeyD" aria-label="Move right">▶</button>
+      </div>
+      <button id="touch-jump" class="touch-button jump-button" type="button" data-code="Space" aria-label="Jump"><span>⬆</span><small>JUMP</small></button>
+    </nav>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="message" class="message" aria-live="polite" hidden>
