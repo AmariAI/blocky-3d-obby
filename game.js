@@ -34,7 +34,6 @@ let toastTimer;
 let shopOpen = false;
 let finished = false;
 
-// Purchases and collected coins persist in this browser, not on a server.
 const saveKey = 'blocky-obby-save-v2';
 const saved = (() => {
   try { return JSON.parse(localStorage.getItem(saveKey)) || {}; } catch { return {}; }
@@ -129,7 +128,6 @@ window.addEventListener('keydown', (event) => {
 window.addEventListener('keyup', (event) => { keys[event.code] = false; });
 window.addEventListener('blur', () => { Object.keys(keys).forEach((code) => { keys[code] = false; }); });
 
-// Mobile buttons use pointer events so multiple directions and jump can be held together.
 for (const button of document.querySelectorAll('#touch-controls [data-code]')) {
   const code = button.dataset.code;
   const release = () => {
@@ -154,7 +152,6 @@ for (const button of document.querySelectorAll('#touch-controls [data-code]')) {
   button.addEventListener('contextmenu', (event) => event.preventDefault());
 }
 
-// Platforms get narrower, taller, and more dangerous across four stages.
 const stageColors = [0x61d98b, 0x53c9d2, 0xffbf55, 0xf27691];
 const platforms = [];
 const addPlatform = (x, z, w, d, top, stage, checkpoint = false) => {
@@ -202,20 +199,33 @@ for (const [platformIndex, offsetX, offsetZ, size] of hazardSpecs) {
   hazards.push({ mesh, x: mesh.position.x, z: mesh.position.z, radius: size * 0.72 });
 }
 
-// Friendly local racers use the same platforms, jump physics, hazards, and checkpoints as a player.
 function makeCharacter(name, color, skinColor, legColor, addNameplate = false) {
   const character = new THREE.Group();
+
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.82, 1.02, 0.55), new THREE.MeshStandardMaterial({ color, roughness: 0.72 }));
   torso.position.y = 1.22;
   torso.castShadow = true;
   character.add(torso);
+
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.76, 0.76), new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.75 }));
   head.position.y = 2.16;
   head.castShadow = true;
   character.add(head);
+
   const eyes = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.035), new THREE.MeshStandardMaterial({ color: 0x24324c }));
   eyes.position.set(0, 2.19, 0.395);
   character.add(eyes);
+
+  const handMaterial = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.8 });
+  const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.68, 0.21), handMaterial);
+  leftArm.position.set(-0.58, 1.3, 0);
+  leftArm.castShadow = true;
+  character.add(leftArm);
+
+  const rightArm = leftArm.clone();
+  rightArm.position.x = 0.58;
+  character.add(rightArm);
+
   const legs = [];
   for (const x of [-0.22, 0.22]) {
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.54, 0.34), new THREE.MeshStandardMaterial({ color: legColor, roughness: 0.8 }));
@@ -224,6 +234,7 @@ function makeCharacter(name, color, skinColor, legColor, addNameplate = false) {
     character.add(leg);
     legs.push(leg);
   }
+
   if (addNameplate) {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
@@ -244,8 +255,9 @@ function makeCharacter(name, color, skinColor, legColor, addNameplate = false) {
     label.scale.set(2.4, 0.6, 1);
     character.add(label);
   }
+
   scene.add(character);
-  return { group: character, legs };
+  return { group: character, legs, arms: [leftArm, rightArm] };
 }
 
 const botRoster = [
@@ -258,6 +270,7 @@ const bots = botRoster.map((settings) => {
   avatar.group.position.set(settings.lane, 0.05, -2.2);
   return { ...settings, ...avatar, velocityY: 0, onGround: false, currentPlatform: 0, checkpointIndex: 0, checkpointX: settings.lane, checkpointZ: -2.2, phase: 'approach', phaseTimer: settings.delay, jumpPressed: false, finished: false };
 });
+
 function directionalRadius(platform, dx, dz) {
   const xRadius = Math.abs(dx) < 0.001 ? Infinity : platform.w / 2 / Math.abs(dx);
   const zRadius = Math.abs(dz) < 0.001 ? Infinity : platform.d / 2 / Math.abs(dz);
@@ -276,12 +289,10 @@ function updateBots(delta, active) {
   for (const bot of bots) {
     if (bot.finished) continue;
     const position = bot.group.position;
-    if (!active) {
-      bot.phaseTimer = Math.max(bot.phaseTimer, 0.15);
-      continue;
-    }
+    if (!active) continue;
     bot.phaseTimer -= delta;
     if (bot.phaseTimer > 0) continue;
+
     const nextIndex = Math.min(bot.currentPlatform + 1, platforms.length - 1);
     const current = platforms[bot.currentPlatform];
     const next = platforms[nextIndex];
@@ -309,9 +320,9 @@ function updateBots(delta, active) {
       bot.group.rotation.y = Math.atan2(toX, toZ);
       moving = true;
     }
+
     const previousY = position.y;
     if (bot.phase === 'approach' && distance <= 0.35 && bot.onGround) {
-      // Small, varied reaction pauses make these feel less like synchronized moving markers.
       bot.phase = 'jump';
       bot.phaseTimer = 0.08 + Math.random() * 0.14;
       bot.velocityY = 8.1 + Math.random() * 0.35;
@@ -319,6 +330,7 @@ function updateBots(delta, active) {
       bot.jumpPressed = true;
     }
     if (bot.phase === 'jump') bot.phase = 'land';
+
     bot.velocityY -= 22 * delta;
     position.y += bot.velocityY * delta;
     bot.onGround = false;
@@ -339,16 +351,22 @@ function updateBots(delta, active) {
             bot.checkpointZ = platform.z;
           }
           if (i === platforms.length - 1) bot.finished = true;
-          // Briefly hesitate after some landings, just like a player reorienting.
           if (Math.random() < 0.28) bot.phaseTimer = 0.12 + Math.random() * 0.3;
           break;
         }
       }
     }
+
     const hitHazard = hazards.some((hazard) => Math.abs(position.x - hazard.x) < hazard.radius + 0.34 && Math.abs(position.z - hazard.z) < hazard.radius + 0.34 && position.y < hazard.mesh.position.y + 1.5);
     if (hitHazard || position.y < -10 || Math.abs(position.x) > 40) botRespawn(bot);
-    if (moving) bot.legs.forEach((leg, index) => { leg.rotation.x = Math.sin(clock.elapsedTime * 11 + index * Math.PI) * 0.42; });
-    else bot.legs.forEach((leg) => { leg.rotation.x *= 0.82; });
+
+    if (moving) {
+      bot.legs.forEach((leg, index) => { leg.rotation.x = Math.sin(clock.elapsedTime * 11 + index * Math.PI) * 0.42; });
+      bot.arms.forEach((arm, index) => { arm.rotation.x = -Math.sin(clock.elapsedTime * 11 + index * Math.PI) * 0.6; });
+    } else {
+      bot.legs.forEach((leg) => { leg.rotation.x *= 0.82; });
+      bot.arms.forEach((arm) => { arm.rotation.x *= 0.82; });
+    }
   }
 }
 
@@ -376,6 +394,7 @@ scene.add(goalRing);
 const playerAvatar = makeCharacter('You', 0xffb833, 0xffd9a0, 0x4654a4);
 const player = playerAvatar.group;
 const legs = playerAvatar.legs;
+const arms = playerAvatar.arms;
 const aura = new THREE.Mesh(new THREE.SphereGeometry(1.55, 16, 12), new THREE.MeshBasicMaterial({ color: 0x5ef2c2, transparent: true, opacity: 0.16, wireframe: true }));
 aura.position.y = 1.2;
 aura.visible = false;
@@ -479,7 +498,12 @@ function animate() {
       player.rotation.y = Math.atan2(moveX, moveZ);
       moving = true;
       legs.forEach((leg, index) => { leg.rotation.x = Math.sin(elapsed * 12 + index * Math.PI) * 0.45; });
-    } else legs.forEach((leg) => { leg.rotation.x *= 0.8; });
+      arms.forEach((arm, index) => { arm.rotation.x = -Math.sin(elapsed * 12 + index * Math.PI) * 0.5; });
+    } else {
+      legs.forEach((leg) => { leg.rotation.x *= 0.8; });
+      arms.forEach((arm) => { arm.rotation.x *= 0.8; });
+    }
+
     const jumpDown = Boolean(keys.Space);
     if (jumpDown && !jumpWasDown && onGround) {
       velocityY = 8.5 + stats().jump;
@@ -513,6 +537,7 @@ function animate() {
       showToast('Obby complete!');
     }
   }
+
   updateBots(delta, !shopOpen && !finished);
   updateTrail(delta, moving);
   aura.rotation.y += delta * 0.8;
