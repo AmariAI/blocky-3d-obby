@@ -201,31 +201,25 @@ for (const [platformIndex, offsetX, offsetZ, size] of hazardSpecs) {
 
 function makeCharacter(name, color, skinColor, legColor, addNameplate = false) {
   const character = new THREE.Group();
-
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.82, 1.02, 0.55), new THREE.MeshStandardMaterial({ color, roughness: 0.72 }));
   torso.position.y = 1.22;
   torso.castShadow = true;
   character.add(torso);
-
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.76, 0.76), new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.75 }));
   head.position.y = 2.16;
   head.castShadow = true;
   character.add(head);
-
   const eyes = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.035), new THREE.MeshStandardMaterial({ color: 0x24324c }));
   eyes.position.set(0, 2.19, 0.395);
   character.add(eyes);
-
   const handMaterial = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.8 });
   const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.68, 0.21), handMaterial);
   leftArm.position.set(-0.58, 1.3, 0);
   leftArm.castShadow = true;
   character.add(leftArm);
-
   const rightArm = leftArm.clone();
   rightArm.position.x = 0.58;
   character.add(rightArm);
-
   const legs = [];
   for (const x of [-0.22, 0.22]) {
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.54, 0.34), new THREE.MeshStandardMaterial({ color: legColor, roughness: 0.8 }));
@@ -234,7 +228,6 @@ function makeCharacter(name, color, skinColor, legColor, addNameplate = false) {
     character.add(leg);
     legs.push(leg);
   }
-
   if (addNameplate) {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
@@ -255,7 +248,6 @@ function makeCharacter(name, color, skinColor, legColor, addNameplate = false) {
     label.scale.set(2.4, 0.6, 1);
     character.add(label);
   }
-
   scene.add(character);
   return { group: character, legs, arms: [leftArm, rightArm] };
 }
@@ -292,7 +284,6 @@ function updateBots(delta, active) {
     if (!active) continue;
     bot.phaseTimer -= delta;
     if (bot.phaseTimer > 0) continue;
-
     const nextIndex = Math.min(bot.currentPlatform + 1, platforms.length - 1);
     const current = platforms[bot.currentPlatform];
     const next = platforms[nextIndex];
@@ -320,7 +311,6 @@ function updateBots(delta, active) {
       bot.group.rotation.y = Math.atan2(toX, toZ);
       moving = true;
     }
-
     const previousY = position.y;
     if (bot.phase === 'approach' && distance <= 0.35 && bot.onGround) {
       bot.phase = 'jump';
@@ -330,7 +320,6 @@ function updateBots(delta, active) {
       bot.jumpPressed = true;
     }
     if (bot.phase === 'jump') bot.phase = 'land';
-
     bot.velocityY -= 22 * delta;
     position.y += bot.velocityY * delta;
     bot.onGround = false;
@@ -356,10 +345,8 @@ function updateBots(delta, active) {
         }
       }
     }
-
     const hitHazard = hazards.some((hazard) => Math.abs(position.x - hazard.x) < hazard.radius + 0.34 && Math.abs(position.z - hazard.z) < hazard.radius + 0.34 && position.y < hazard.mesh.position.y + 1.5);
     if (hitHazard || position.y < -10 || Math.abs(position.x) > 40) botRespawn(bot);
-
     if (moving) {
       bot.legs.forEach((leg, index) => { leg.rotation.x = Math.sin(clock.elapsedTime * 11 + index * Math.PI) * 0.42; });
       bot.arms.forEach((arm, index) => { arm.rotation.x = -Math.sin(clock.elapsedTime * 11 + index * Math.PI) * 0.6; });
@@ -427,6 +414,8 @@ let velocityY = 0;
 let onGround = false;
 let jumpWasDown = false;
 let elapsed = 0;
+let visualMoveX = 0;
+let visualMoveZ = 0;
 player.position.copy(checkpoint);
 persist();
 
@@ -440,6 +429,8 @@ function respawn() {
   player.position.copy(checkpoint);
   velocityY = 0;
   onGround = false;
+  visualMoveX = 0;
+  visualMoveZ = 0;
 }
 function collectCoins() {
   for (const coin of coins) {
@@ -486,22 +477,35 @@ function animate() {
   const previousY = player.position.y;
   let moving = false;
   if (!shopOpen && !finished) {
-    let moveX = Number(Boolean(keys.KeyD || keys.ArrowRight)) - Number(Boolean(keys.KeyA || keys.ArrowLeft));
-    let moveZ = Number(Boolean(keys.KeyW || keys.ArrowUp)) - Number(Boolean(keys.KeyS || keys.ArrowDown));
-    const magnitude = Math.hypot(moveX, moveZ);
-    if (magnitude > 0) {
-      moveX /= magnitude;
-      moveZ /= magnitude;
-      const speed = 7.2 + stats().speed;
-      player.position.x += moveX * speed * delta;
-      player.position.z += moveZ * speed * delta;
-      player.rotation.y = Math.atan2(moveX, moveZ);
-      moving = true;
-      legs.forEach((leg, index) => { leg.rotation.x = Math.sin(elapsed * 12 + index * Math.PI) * 0.45; });
-      arms.forEach((arm, index) => { arm.rotation.x = -Math.sin(elapsed * 12 + index * Math.PI) * 0.5; });
+    // Combine all keyboard aliases first so holding WASD and arrows together
+    // cannot double movement; smooth acceleration and braking remove choppy starts.
+    const targetX = Number(Boolean(keys.KeyD || keys.ArrowRight)) - Number(Boolean(keys.KeyA || keys.ArrowLeft));
+    const targetZ = Number(Boolean(keys.KeyW || keys.ArrowUp)) - Number(Boolean(keys.KeyS || keys.ArrowDown));
+    const magnitude = Math.hypot(targetX, targetZ);
+    if (magnitude > 1) {
+      visualMoveX = targetX / magnitude;
+      visualMoveZ = targetZ / magnitude;
     } else {
-      legs.forEach((leg) => { leg.rotation.x *= 0.8; });
-      arms.forEach((arm) => { arm.rotation.x *= 0.8; });
+      visualMoveX = targetX;
+      visualMoveZ = targetZ;
+    }
+    const inputLength = Math.hypot(targetX, targetZ);
+    const targetVelocityX = inputLength > 0 ? visualMoveX * (7.2 + stats().speed) : 0;
+    const targetVelocityZ = inputLength > 0 ? visualMoveZ * (7.2 + stats().speed) : 0;
+    player.userData.moveVelocityX = THREE.MathUtils.damp(player.userData.moveVelocityX || 0, targetVelocityX, inputLength > 0 ? 14 : 19, delta);
+    player.userData.moveVelocityZ = THREE.MathUtils.damp(player.userData.moveVelocityZ || 0, targetVelocityZ, inputLength > 0 ? 14 : 19, delta);
+    player.position.x += player.userData.moveVelocityX * delta;
+    player.position.z += player.userData.moveVelocityZ * delta;
+    moving = Math.hypot(player.userData.moveVelocityX, player.userData.moveVelocityZ) > 0.15;
+    if (moving) {
+      const desiredRotation = Math.atan2(player.userData.moveVelocityX, player.userData.moveVelocityZ);
+      const rotationDelta = THREE.MathUtils.euclideanModulo(desiredRotation - player.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
+      player.rotation.y += rotationDelta * (1 - Math.exp(-12 * delta));
+      legs.forEach((leg, index) => { leg.rotation.x = Math.sin(elapsed * 11 + index * Math.PI) * 0.42; });
+      arms.forEach((arm, index) => { arm.rotation.x = -Math.sin(elapsed * 11 + index * Math.PI) * 0.48; });
+    } else {
+      legs.forEach((leg) => { leg.rotation.x *= 0.78; });
+      arms.forEach((arm) => { arm.rotation.x *= 0.78; });
     }
 
     const jumpDown = Boolean(keys.Space);
@@ -536,6 +540,10 @@ function animate() {
       stageLabel.textContent = 'Complete · Champion!';
       showToast('Obby complete!');
     }
+  } else {
+    player.userData.moveVelocityX = 0;
+    player.userData.moveVelocityZ = 0;
+    jumpWasDown = false;
   }
 
   updateBots(delta, !shopOpen && !finished);
