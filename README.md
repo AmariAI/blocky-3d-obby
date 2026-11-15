@@ -1,32 +1,32 @@
 # Blocky Obby
 
-A small 3D web game built with Three.js. The player is a blocky character, and the goal is to reach the glowing cube at the end of the obby.
+A browser-based 3D obstacle course made with Three.js. Run, jump, collect coins, unlock small aura and trail boosts, and tackle a course that ramps from Easy to Expert.
 
-## Play locally
+## Play
 
-Option 1: open `index.html` directly in a browser.
-
-Option 2: run a tiny local server:
+Run a local web server from the project folder (the game imports Three.js as an ES module):
 
 ```bash
-cd blocky-3d-obby
 python -m http.server 8000
 ```
 
-Then open `http://localhost:8000` in your browser.
+Open <http://localhost:8000> in your browser. You can also publish the repository with GitHub Pages.
 
 ## Controls
 
-- `W`, `A`, `S`, `D`: move
-- `Space`: jump
-- Reach the green crystal to win
+- **WASD** or **arrow keys** — move
+- **Space** — jump
+- **Shop** — open the upgrade panel; press Escape or × to close
+- Collect coins along the route, and use checkpoints to save your place
 
-## Files
+## Upgrades and difficulty
 
-- `index.html`: page shell
-- `style.css`: HUD and screen styling
-- `game.js`: Three.js gameplay logic and level generation
+Coins buy visual auras and trails with modest movement bonuses. Aura upgrades increase jump power; trail upgrades increase movement speed. Across all upgrades, bonuses are capped at +18% speed and +12% jump height. The course grows more demanding in four stages: wider Easy platforms, narrower Medium jumps, Hard hazards, then the narrow Expert finish.
 
-## Notes
+Coin balance and purchased upgrades are saved in the current browser using local storage. This is a local game save, not an online account.
 
-This is a lightweight browser game designed for quick play in a GitHub-hosted repo and easy local editing.
+## Project files
+
+- `index.html` — game HUD, shop panel, and win screen
+- `style.css` — responsive interface styles
+- `game.js` — Three.js scene, course, controls, coins, shop, and upgrades
