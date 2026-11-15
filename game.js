@@ -154,7 +154,7 @@ for (const button of document.querySelectorAll('#touch-controls [data-code]')) {
   button.addEventListener('contextmenu', (event) => event.preventDefault());
 }
 
-// Color, width, and hazards ramp up as the course advances through four stages.
+// Platforms get narrower, taller, and more dangerous across four stages.
 const stageColors = [0x61d98b, 0x53c9d2, 0xffbf55, 0xf27691];
 const platforms = [];
 const addPlatform = (x, z, w, d, top, stage, checkpoint = false) => {
@@ -202,6 +202,156 @@ for (const [platformIndex, offsetX, offsetZ, size] of hazardSpecs) {
   hazards.push({ mesh, x: mesh.position.x, z: mesh.position.z, radius: size * 0.72 });
 }
 
+// Friendly local racers use the same platforms, jump physics, hazards, and checkpoints as a player.
+function makeCharacter(name, color, skinColor, legColor, addNameplate = false) {
+  const character = new THREE.Group();
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.82, 1.02, 0.55), new THREE.MeshStandardMaterial({ color, roughness: 0.72 }));
+  torso.position.y = 1.22;
+  torso.castShadow = true;
+  character.add(torso);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.76, 0.76), new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.75 }));
+  head.position.y = 2.16;
+  head.castShadow = true;
+  character.add(head);
+  const eyes = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.035), new THREE.MeshStandardMaterial({ color: 0x24324c }));
+  eyes.position.set(0, 2.19, 0.395);
+  character.add(eyes);
+  const legs = [];
+  for (const x of [-0.22, 0.22]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.54, 0.34), new THREE.MeshStandardMaterial({ color: legColor, roughness: 0.8 }));
+    leg.position.set(x, 0.47, 0);
+    leg.castShadow = true;
+    character.add(leg);
+    legs.push(leg);
+  }
+  if (addNameplate) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const context = canvas.getContext('2d');
+    context.fillStyle = 'rgba(14, 25, 47, 0.82)';
+    context.beginPath();
+    context.roundRect(4, 4, 248, 56, 16);
+    context.fill();
+    context.fillStyle = '#ffffff';
+    context.font = 'bold 30px system-ui, sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(name, 128, 33);
+    const texture = new THREE.CanvasTexture(canvas);
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+    label.position.y = 3.05;
+    label.scale.set(2.4, 0.6, 1);
+    character.add(label);
+  }
+  scene.add(character);
+  return { group: character, legs };
+}
+
+const botRoster = [
+  { name: 'Milo', color: 0x39c5dc, speed: 6.1, delay: 0.7, lane: -1.4 },
+  { name: 'Nova', color: 0xa879ff, speed: 6.4, delay: 1.5, lane: 0 },
+  { name: 'Rex', color: 0xff687d, speed: 5.8, delay: 2.4, lane: 1.4 },
+];
+const bots = botRoster.map((settings) => {
+  const avatar = makeCharacter(settings.name, settings.color, 0xffd9a0, 0x4654a4, true);
+  avatar.group.position.set(settings.lane, 0.05, -2.2);
+  return { ...settings, ...avatar, velocityY: 0, onGround: false, currentPlatform: 0, checkpointIndex: 0, checkpointX: settings.lane, checkpointZ: -2.2, phase: 'approach', phaseTimer: settings.delay, jumpPressed: false, finished: false };
+});
+function directionalRadius(platform, dx, dz) {
+  const xRadius = Math.abs(dx) < 0.001 ? Infinity : platform.w / 2 / Math.abs(dx);
+  const zRadius = Math.abs(dz) < 0.001 ? Infinity : platform.d / 2 / Math.abs(dz);
+  return Math.min(xRadius, zRadius);
+}
+function botRespawn(bot) {
+  bot.group.position.set(bot.checkpointX, platforms[bot.checkpointIndex].top + 0.05, bot.checkpointZ);
+  bot.currentPlatform = bot.checkpointIndex;
+  bot.velocityY = 0;
+  bot.onGround = false;
+  bot.phase = 'approach';
+  bot.phaseTimer = 0.35 + Math.random() * 0.5;
+  bot.jumpPressed = false;
+}
+function updateBots(delta, active) {
+  for (const bot of bots) {
+    if (bot.finished) continue;
+    const position = bot.group.position;
+    if (!active) {
+      bot.phaseTimer = Math.max(bot.phaseTimer, 0.15);
+      continue;
+    }
+    bot.phaseTimer -= delta;
+    if (bot.phaseTimer > 0) continue;
+    const nextIndex = Math.min(bot.currentPlatform + 1, platforms.length - 1);
+    const current = platforms[bot.currentPlatform];
+    const next = platforms[nextIndex];
+    const dx = next.x - current.x;
+    const dz = next.z - current.z;
+    const length = Math.hypot(dx, dz) || 1;
+    const dirX = dx / length;
+    const dirZ = dz / length;
+    const takeoffDistance = Math.max(0.5, directionalRadius(current, dirX, dirZ) - 0.75);
+    const landingDistance = Math.max(0.45, directionalRadius(next, dirX, dirZ) - 0.85);
+    const takeoffX = current.x + dirX * takeoffDistance;
+    const takeoffZ = current.z + dirZ * takeoffDistance;
+    const landingX = next.x - dirX * landingDistance;
+    const landingZ = next.z - dirZ * landingDistance;
+    const targetX = bot.phase === 'approach' ? takeoffX : landingX;
+    const targetZ = bot.phase === 'approach' ? takeoffZ : landingZ;
+    const toX = targetX - position.x;
+    const toZ = targetZ - position.z;
+    const distance = Math.hypot(toX, toZ);
+    let moving = false;
+    if (distance > 0.22) {
+      const step = Math.min(distance, bot.speed * delta);
+      position.x += toX / distance * step;
+      position.z += toZ / distance * step;
+      bot.group.rotation.y = Math.atan2(toX, toZ);
+      moving = true;
+    }
+    const previousY = position.y;
+    if (bot.phase === 'approach' && distance <= 0.35 && bot.onGround) {
+      // Small, varied reaction pauses make these feel less like synchronized moving markers.
+      bot.phase = 'jump';
+      bot.phaseTimer = 0.08 + Math.random() * 0.14;
+      bot.velocityY = 8.1 + Math.random() * 0.35;
+      bot.onGround = false;
+      bot.jumpPressed = true;
+    }
+    if (bot.phase === 'jump') bot.phase = 'land';
+    bot.velocityY -= 22 * delta;
+    position.y += bot.velocityY * delta;
+    bot.onGround = false;
+    if (bot.velocityY <= 0) {
+      for (let i = 0; i < platforms.length; i++) {
+        const platform = platforms[i];
+        const within = Math.abs(position.x - platform.x) < platform.w / 2 - 0.28 && Math.abs(position.z - platform.z) < platform.d / 2 - 0.28;
+        if (within && previousY >= platform.top - 0.1 && position.y <= platform.top) {
+          position.y = platform.top;
+          bot.velocityY = 0;
+          bot.onGround = true;
+          if (i >= bot.currentPlatform) bot.currentPlatform = i;
+          bot.phase = 'approach';
+          bot.jumpPressed = false;
+          if (platform.checkpoint && i > bot.checkpointIndex) {
+            bot.checkpointIndex = i;
+            bot.checkpointX = platform.x;
+            bot.checkpointZ = platform.z;
+          }
+          if (i === platforms.length - 1) bot.finished = true;
+          // Briefly hesitate after some landings, just like a player reorienting.
+          if (Math.random() < 0.28) bot.phaseTimer = 0.12 + Math.random() * 0.3;
+          break;
+        }
+      }
+    }
+    const hitHazard = hazards.some((hazard) => Math.abs(position.x - hazard.x) < hazard.radius + 0.34 && Math.abs(position.z - hazard.z) < hazard.radius + 0.34 && position.y < hazard.mesh.position.y + 1.5);
+    if (hitHazard || position.y < -10 || Math.abs(position.x) > 40) botRespawn(bot);
+    if (moving) bot.legs.forEach((leg, index) => { leg.rotation.x = Math.sin(clock.elapsedTime * 11 + index * Math.PI) * 0.42; });
+    else bot.legs.forEach((leg) => { leg.rotation.x *= 0.82; });
+  }
+}
+
 const coins = [];
 const coinGeometry = new THREE.TorusGeometry(0.38, 0.12, 8, 18);
 const coinMaterial = new THREE.MeshStandardMaterial({ color: 0xffd34e, emissive: 0x9a5d00, emissiveIntensity: 0.55, metalness: 0.3, roughness: 0.35 });
@@ -223,27 +373,9 @@ const goalRing = new THREE.Mesh(new THREE.TorusGeometry(2.1, 0.11, 10, 48), new 
 goalRing.position.set(0, endPlatform.top + 1.5, endPlatform.z);
 scene.add(goalRing);
 
-const player = new THREE.Group();
-const torso = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.05, 0.55), new THREE.MeshStandardMaterial({ color: 0xffb833, roughness: 0.7 }));
-torso.position.y = 1.25;
-torso.castShadow = true;
-player.add(torso);
-const head = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.78, 0.78), new THREE.MeshStandardMaterial({ color: 0xffd9a0, roughness: 0.75 }));
-head.position.y = 2.2;
-head.castShadow = true;
-player.add(head);
-const eyes = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.08, 0.035), new THREE.MeshStandardMaterial({ color: 0x24324c }));
-eyes.position.set(0, 2.24, 0.405);
-player.add(eyes);
-const legs = [];
-for (const x of [-0.23, 0.23]) {
-  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.55, 0.34), new THREE.MeshStandardMaterial({ color: 0x4654a4, roughness: 0.8 }));
-  leg.position.set(x, 0.48, 0);
-  leg.castShadow = true;
-  player.add(leg);
-  legs.push(leg);
-}
-scene.add(player);
+const playerAvatar = makeCharacter('You', 0xffb833, 0xffd9a0, 0x4654a4);
+const player = playerAvatar.group;
+const legs = playerAvatar.legs;
 const aura = new THREE.Mesh(new THREE.SphereGeometry(1.55, 16, 12), new THREE.MeshBasicMaterial({ color: 0x5ef2c2, transparent: true, opacity: 0.16, wireframe: true }));
 aura.position.y = 1.2;
 aura.visible = false;
@@ -381,6 +513,7 @@ function animate() {
       showToast('Obby complete!');
     }
   }
+  updateBots(delta, !shopOpen && !finished);
   updateTrail(delta, moving);
   aura.rotation.y += delta * 0.8;
   aura.scale.setScalar(1 + Math.sin(elapsed * 3) * 0.035);
@@ -400,6 +533,16 @@ $('#play-again').addEventListener('click', () => {
   currentCheckpointIndex = 0;
   checkpoint.set(0, 0.05, 0);
   respawn();
+  for (const bot of bots) {
+    bot.finished = false;
+    bot.checkpointIndex = 0;
+    bot.checkpointX = bot.lane;
+    bot.checkpointZ = -2.2;
+    bot.currentPlatform = 0;
+    bot.group.position.set(bot.lane, 0.05, -2.2);
+    bot.phase = 'approach';
+    bot.phaseTimer = bot.delay;
+  }
 });
 renderer.setAnimationLoop(animate);
 window.addEventListener('resize', () => {
